@@ -1,6 +1,7 @@
 // SAO993
 // DAA3652
 
+
 public class FairUnifanBathroom {
 	int max;
 	int curr;
