@@ -5,17 +5,17 @@ import java.util.concurrent.locks.ReentrantLock;
 public class MonitorCyclicBarrier implements CyclicBarrier {
 
     private final int parties;
-    private int count;           // counts down the number of threads still to arrive
-    private int generation = 0;  // changes when barrier trips
+    private int idx;           // counts down the number of threads still to arrive
+    private int gen = 0;  // changes when barrier trips
     private boolean active = true;
 
     // The lock and condition variable that act as our monitor.
     private final ReentrantLock lock = new ReentrantLock();
-    private final Condition trip = lock.newCondition();
+    private final Condition condition = lock.newCondition();
 
     public MonitorCyclicBarrier(int parties) {
         this.parties = parties;
-        this.count = parties;
+        this.idx = 0;
     }
 
     /*
@@ -31,35 +31,28 @@ public class MonitorCyclicBarrier implements CyclicBarrier {
     public int await() throws InterruptedException {
         lock.lock();
         try {
-            // If the barrier is inactive, do not block.
             if (!active) {
                 return 0;
             }
+            int ret = idx++;
+            int g = gen;
 
-            // Compute the arrival index (first thread gets 0, next 1, etc.)
-            int arrivalIndex = parties - count;
-            int myGeneration = generation;
-
-            // Decrement count since this thread has arrived.
-            if (--count == 0) {
-                // Last thread to arrive: trip the barrier.
-                generation++;         // move to a new generation
-                count = parties;      // reset count for next use
-                trip.signalAll();     // wake up all waiting threads
-                return arrivalIndex;
+            if (idx == parties) {
+                // Last thread to arrive: condition the barrier.
+                gen++;
+                idx = 0;
+                condition.signalAll();
+                return ret;
             }
-
-            // Otherwise, wait until the barrier trips (i.e. generation changes)
-            while (myGeneration == generation && active) {
-                trip.await();
+            // Otherwise, wait until the barrier trips (i.e. gen changes)
+            while (g == gen && active) {
+                condition.await();
             }
-
-            // If the barrier has been deactivated while waiting, return 0.
+            
             if (!active) {
                 return 0;
             }
-
-            return arrivalIndex;
+            return ret;
         } finally {
             lock.unlock();
         }
@@ -76,9 +69,9 @@ public class MonitorCyclicBarrier implements CyclicBarrier {
         try {
             if (!active) {
                 active = true;
-                count = parties;    // reset the barrier count
-                generation++;       // move to a new generation to wake waiting threads
-                trip.signalAll();
+                idx = parties;    
+                gen++;      
+                condition.signalAll();
             }
         } finally {
             lock.unlock();
@@ -93,7 +86,7 @@ public class MonitorCyclicBarrier implements CyclicBarrier {
         lock.lock();
         try {
             active = false;
-            trip.signalAll();  // wake all waiting threads so they can exit promptly
+            condition.signalAll();  // wake all waiting threads so they exit
         } finally {
             lock.unlock();
         }
